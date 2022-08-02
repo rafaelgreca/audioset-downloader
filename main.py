@@ -3,17 +3,6 @@ from src.core import download_files, download_dataset_files, create_csv
 import argparse
 import os
 import pandas as pd
-import logging
-
-## create the log file
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-file_handler = logging.FileHandler("./logging.log")
-file_handler.setFormatter(formatter)
-
-logger.addHandler(file_handler)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Audioset dataset downloader")
@@ -42,7 +31,6 @@ if __name__ == "__main__":
 
     assert args.fs in available_fs, f"The fs must be {available_fs}"
     assert args.dataset in all_datasets, f"The dataset must be one of {all_datasets}"
-    # assert all([c in all_classes for c in args.c]), f"The class(es) must be {all_classes}"
     assert ((args.max_files == None) or ((type(args.max_files) == int) and (args.max_files > 0))), f"You must provide a valid value for max_files or let it empty to download everything"
 
     if args.dataset == "eval":
@@ -71,22 +59,32 @@ if __name__ == "__main__":
         assert os.path.exists(os.path.join(args.labels_file, "class_labels_indices.csv")), f"You need to download the class_labels_indices csv file or keep the labels_file param None"
     
         labels_files_dir = os.path.join(args.labels_file, dataset)
-        classes_files_dir = os.path.join(args.labels_file, "class_labels_indices.csv")
+        classes_files_dir = os.path.join(args.labels_file, "class_labels_indices.csv")    
 
-    ## filter the classes to keep only what we want to download
-
+    
     df = create_csv(labels_files_dir=labels_files_dir) 
     all_classes = pd.read_csv(classes_files_dir, sep=",")
+    all_classes["display_name"] = all_classes["display_name"].apply(lambda x: x.lower())
     df = pd.merge(df, all_classes, on="mid")
     df = df[["youtube_id", "start_timestamp", "end_timestamp", "mid", "display_name"]].reset_index(drop=True)
     
+    ## some classes has two names, like: "domestic animals, pets"
+    ## so we will split them and duplicate the row
+    df["display_name"] = df["display_name"].replace(r"\(.+\)", "", regex=True)
+    df["display_name"] = df["display_name"].str.split(",")
+    df = df.explode("display_name").reset_index(drop=True)
+    df["display_name"] = df["display_name"].apply(lambda x: x.strip())
+    classes_availables = df["display_name"].unique().tolist()
+    
+    ## filter the classes to keep only what we want to download
     ## mapping the chosen classes
     if args.c != "all":
-        new_df = df[df["display_name"].isin(all_classes)]
+        assert all([c.lower() in classes_availables for c in args.c]), f"The class(es) must be {classes_availables}"
+        df = pd.concat([df[df["display_name"] == c] for c in args.c], axis=0)
         classes = df["display_name"].unique().tolist()
     else:
         classes = df["display_name"].unique().tolist()
-
+    
     ## download the files
     download_files(df=df,
                    use_multiprocessing=args.multiprocessing,

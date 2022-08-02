@@ -4,6 +4,17 @@ import csv
 import os
 import pandas as pd
 import multiprocessing
+import logging
+
+## create the log file
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_handler = logging.FileHandler("./logging.log")
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
 
 def create_csv(labels_files_dir: str) -> pd.DataFrame:
     """
@@ -67,12 +78,17 @@ def _aux_download_file(video_id: str,
     Return:
         None
     """
-    label = label.split(",")[0].replace(" ", "_")
-    os.makedirs(f"{PATH_OUTPUT}/{label}", exist_ok=True)
-    youtube_dl_command = f"youtube-dl -f bestaudio -g https://www.youtube.com/watch?v={video_id}"
-    ffmpeg_command = f"ffmpeg -{OVERWRITE_FILE} -ss {start_timestamp} -to {end_timestamp} -i $({youtube_dl_command}) " + \
-                     f"-ar {FRAME_SAMPLE} -hide_banner -v warning {PATH_OUTPUT}/{label}/{video_id}-{start_timestamp}-{end_timestamp}.wav"
-    os.system(ffmpeg_command)
+    try:
+        label = label.split(",")[0].replace(" ", "_")
+        os.makedirs(f"{PATH_OUTPUT}/{label}", exist_ok=True)
+        youtube_dl_command = f"youtube-dl -f bestaudio -g https://www.youtube.com/watch?v={video_id} -i"
+        ffmpeg_command = f"ffmpeg -{OVERWRITE_FILE} -ss {start_timestamp} -to {end_timestamp} -i $({youtube_dl_command}) " + \
+                        f"-ar {FRAME_SAMPLE} -hide_banner -v quiet {PATH_OUTPUT}/{label}/{video_id}-{start_timestamp}-{end_timestamp}.wav"
+        
+        if os.system(ffmpeg_command) != 0:
+            raise Exception(f"Could not download video {video_id}")
+    except:
+        logger.error(f"Could not download video {video_id}")
 
 def download_files(df: pd.DataFrame,
                    use_multiprocessing: bool,
